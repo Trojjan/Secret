@@ -29,12 +29,16 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
+///////*********     Creating the user Schema       **********///////
+
 const userSchema = new mongoose.Schema ({
+
     email:String,
     password:String,
     googleId:String,
     facebookId:String,
     username: String,
+    secret:String
 });
 
 userSchema.plugin(passportLocalMongoose);
@@ -42,11 +46,15 @@ userSchema.plugin(findOrCreate);
 
 const User = new mongoose.model("User",userSchema);
 
+///////*********     Passport Serializing        **********///////
+
 passport.serializeUser(function(user, cb) {
     process.nextTick(function() {
       cb(null, { id: user.id, username: user.username, name: user.name });
     });
   });
+
+  ///////*********     Passport deserializing       **********///////
   
   passport.deserializeUser(function(user, cb) {
     process.nextTick(function() {
@@ -54,12 +62,13 @@ passport.serializeUser(function(user, cb) {
     });
   });
 
+  ///////*********     Creating Google Strategy       **********///////
+
 passport.use(new GoogleStrategy({
     clientID:     process.env.CLIENT_ID,
     clientSecret: process.env.CLIENT_SECRET,
     callbackURL: "http://127.0.0.1:3000/auth/google/secrets",
     userProfileURL: "https://www.googleapis.com/oauth2/v3/userinfo"
-    // passReqToCallback   : true
   },
   function(request, accessToken, refreshToken, profile, done) {
     console.log(profile);
@@ -68,6 +77,8 @@ passport.use(new GoogleStrategy({
     });
   }
 ));
+
+///////*********     Creating Facebook Strategy       **********///////
 
 passport.use(new FacebookStrategy({
     clientID: process.env.CLIENT_ID_FB,
@@ -86,6 +97,8 @@ app.get("/",function(req,res) {
     res.render("home");
 });
 
+///////*********   Facebook authenticate          **********///////
+
 app.get('/auth/facebook',
   passport.authenticate('facebook'));
 
@@ -95,6 +108,8 @@ app.get('/auth/facebook/secrets',
     // Successful authentication, redirect home.
     res.redirect('/secrets');
   });
+
+  ///////*********     Google authenticate        **********///////
 
   app.get("/auth/google",
     passport.authenticate('google', { scope: ["email","profile"] })
@@ -108,6 +123,34 @@ function(req,res) {
 }
 );
 
+///////*********    authenticating the submit          **********///////
+
+app.get("/submit",function(req,res) {
+  if (req.isAuthenticated()) {
+    res.render('submit');
+} else {
+    res.redirect('login');
+}
+});
+
+///////*********     Posting to the submit and saving it           **********///////
+
+app.post("/submit",function(req,res) {
+  const submittedSecret = req.body.secret;
+  User.findById(req.user.id,function(err,foundUser) {
+    if (err) {
+      console.log(err);
+    }else{
+      if (foundUser) {
+        foundUser.secret = submittedSecret;
+        foundUser.save(function() {
+          res.redirect('/secrets');
+        })
+      }
+    }
+  });
+});
+
 app.get("/login",function(req,res) {
     res.render("login");
 });
@@ -116,13 +159,21 @@ app.get("/register",function(req,res) {
     res.render("register");
 });
 
+///////*********    Finding the content and Displaying it         **********///////
+
 app.get('/secrets',function(req,res) {
-    if (req.isAuthenticated()) {
-        res.render('secrets');
+   User.find({'secret':{$ne:null}},function(err,foundUsers) {
+    if (err) {
+      console.log(err);
     } else {
-        res.redirect('login');
+      if (foundUsers) {
+        res.render('secrets',{usersWithSecrets:foundUsers});
+      }
     }
+   });
 });
+
+///////*********     Logining out function       **********///////
 
 app.get("/logout", function(req, res){
     req.logout(function (err) {
@@ -134,6 +185,8 @@ app.get("/logout", function(req, res){
     });
     
 });
+
+///////*********     User registeration and authentication       **********///////
 
 app.post("/register",function(req,res) {
     User.register({username:req.body.username},req.body.password,function(err,user) {
@@ -149,6 +202,8 @@ app.post("/register",function(req,res) {
 });
 
 passport.use(User.createStrategy());
+
+///////*********      Create the login post and authenticate it      **********///////
 
 app.post("/login",function(req,res) {
    const user = new User({
